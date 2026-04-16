@@ -9865,7 +9865,11 @@ function Qd() {
             return o.json()
         }
         ).then(o => {
-            t(Array.isArray(o) ? o : []),
+            let u = [];
+            if (Array.isArray(o) ? u = o : o && typeof o == "object" && "channels"in o && Array.isArray(o.channels) && (u = o.channels),
+            u.length === 0)
+                throw new Error("No channels found in response");
+            t(u),
             r(!1)
         }
         ).catch(o => {
