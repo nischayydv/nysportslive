@@ -17280,85 +17280,107 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
 
       await R.attach(A);
 
-      // ✅ EXACT UI config from working HTML
+      // UI config
       const ui = new O.ui.Overlay(R, J, A);
       ui.configure({
         addBigPlayButton: true,
         controlPanelElements: [
-          "mute",
-          "play_pause", 
-          "time_and_duration",
-          "spacer",
-          "quality",
-          "picture_in_picture",
-          "fullscreen"
+          "mute", "play_pause", "time_and_duration", "spacer", 
+          "quality", "picture_in_picture", "fullscreen"
         ],
-        seekBarColors: {
-          base: "white",
-          buffered: "red", 
-          played: "green"
-        }
+        seekBarColors: { base: "white", buffered: "red", played: "green" }
       });
 
-      // ✅ EXACT player config from working HTML
+      // Player config
       R.configure({
-        drm: {
-          clearKeys: {
-            [t.keyId]: t.key
-          }
-        },
-        manifest: {
-          defaultPresentationDelay: 5
-        },
+        drm: { clearKeys: { [t.keyId]: t.key } },
+        manifest: { defaultPresentationDelay: 5 },
         streaming: {
           lowLatencyMode: true,
           bufferingGoal: 10,
           rebufferingGoal: 2,
-          safeSeekOffset: 5
+          safeSeekOffset: 5,
+          // ✅ PREVENT API INTERFERENCE
+          retryParameters: {
+            timeout: 30000,
+            maxAttempts: 5,
+            baseDelay: 2000,
+            backoffFactor: 1.2,
+            fuzzFactor: 0.1
+          }
         }
       });
 
-      // ✅ EXACT cookie/networking from working HTML
+      // ✅ FIXED: ONLY JioTV URLs - ignore Supabase API
       if (t.cookie) {
         R.getNetworkingEngine().registerRequestFilter((type, request) => {
+          // Skip non-JioTV requests (Supabase API)
+          if (!request.uris[0]?.includes('jiotv') && 
+              !request.uris[0]?.includes('cdn.jio')) {
+            return;
+          }
+
           request.headers["Referer"] = "https://www.jiotv.com/";
           request.headers["User-Agent"] = "plaYtv/7.1.5 (Linux;Android 13) ExoPlayerLib/2.11.6";
           request.headers["Cookie"] = t.cookie;
 
-          // ✅ EXACT cookie URL injection logic
-          let urlCookie = t.cookie.startsWith("__hdnea__=") ? t.cookie.substring(10) : t.cookie;
+          let urlCookie = t.cookie.startsWith("__hdnea__=") ? 
+            t.cookie.substring(10) : t.cookie;
           
           if ((type === O.net.NetworkingEngine.RequestType.MANIFEST ||
                type === O.net.NetworkingEngine.RequestType.SEGMENT) &&
-              !request.uris[0].includes("__hdnea__")) {
+              request.uris[0] && !request.uris[0].includes("__hdnea__")) {
             const sep = request.uris[0].includes("?") ? "&" : "?";
             request.uris[0] += sep + "__hdnea__=" + urlCookie;
           }
         });
       }
 
-      // ✅ Simple error handler
-      R.addEventListener("error", V => {
-        if (!isMounted || V.detail.severity === 1) return;
-        console.error("Shaka error:", V.detail);
+      // ✅ FIXED: Ignore Supabase  API responses
+      R.getNetworkingEngine().registerResponseFilter((type, response) => {
+        // Skip Supabase API responses
+        if (response.headers?.['content-type']?.includes('application/json') ||
+            response.uris?.[0]?.includes('supabase')) {
+          return;
+        }
         
-        if (l.current < xs) {
-          l.current++;
-          const delay = l.current * 4000;
-          v("retrying");
-          m(`Loading… (${l.current}/${xs})`);
-          p(true);
-          u.current = setTimeout(() => {
-            if (isMounted && a.current === R) {
-              d.current = false;
-              $(R);
-            }
-          }, delay);
-        } else {
-          T("Unable to load stream");
+        if (response.status === 429) {
+          const retry = parseInt(response.headers["retry-after"] || "5", 10) * 1000;
+          return new Promise(resolve => setTimeout(resolve, retry));
         }
       });
 
+      // ✅ ROBUST ERROR HANDLER - ignores API errors
+      R.addEventListener("error", V => {
+        if (!isMounted || V.detail.severity === 1) return;
+        
+        const error = V.detail;
+        console.error("Shaka error:", error);
+        
+        // ✅ ONLY retry JioTV stream errors, ignore API
+        if (error.category === 1 && ( // NETWORK_ERROR
+            error.uris?.[0]?.includes('jiotv') || 
+            error.uris?.[0]?.includes('cdn.jio'))) {
+          
+          if (l.current < xs) {
+            l.current++;
+            const delay = Math.min(l.current * 3000, 15000);
+            v("retrying");
+            m(`Connecting… (${l.current}/${xs})`);
+            p(true);
+            u.current = setTimeout(() => {
+              if (isMounted && a.current === R) {
+                d.current = false;
+                $(R);
+              }
+            }, delay);
+          } else {
+            T("Stream unavailable");
+          }
+        }
+      });
+
+      // Loading states
       R.addEventListener("loading.complete", () => {
         if (isMounted) {
           v("ready");
@@ -17366,27 +17388,47 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
         }
       });
 
-      // ✅ Load + auto-play like HTML
+      R.addEventListener("buffering", event => {
+        if (isMounted && event.buffering) {
+          v("loading");
+          m("Buffering…");
+        }
+      });
+
+      // Load stream
       await $(R);
-      
-      // Auto-play after load
+
+      // ✅ STABLE AUTO-PLAY - won't pause on API calls
       A.addEventListener("loadeddata", () => {
-        if (isMounted) {
+        if (isMounted && h !== "playing") {
           A.muted = true;
           A.play().catch(() => {});
         }
       }, { once: true });
 
       A.addEventListener("play", () => {
-        if (isMounted) {
+        if (isMounted && !c.current) {
           A.muted = false;
-          z(); // Trigger view tracking
+          c.current = true;
+          z();
+        }
+      });
+
+      // ✅ PREVENT PAUSE on API calls
+      A.addEventListener("pause", () => {
+        // Auto-resume if buffering or API interference
+        if (h === "playing" && A.currentTime > 0) {
+          setTimeout(() => {
+            if (isMounted && A.paused) {
+              A.play().catch(() => {});
+            }
+          }, 500);
         }
       });
 
     } catch (error) {
-      console.error("Player init failed:", error);
-      if (isMounted) T("Player failed to initialize");
+      console.error("Player init:", error);
+      if (isMounted) T("Player initialization failed");
     }
   };
 
@@ -17401,18 +17443,12 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
     
     if (a.current && playerInstance === a.current) {
       a.current.detach()
-        .then(() => {
-          if (isMounted && a.current) {
-            a.current.destroy().catch(console.error);
-          }
-        })
+        .then(() => a.current?.destroy().catch(console.error))
         .catch(console.error)
-        .finally(() => {
-          a.current = null;
-        });
+        .finally(() => { a.current = null; });
     }
   };
-}, [t, $, T, z]),
+}, [t, $, T, z, h]),
     j.useEffect( () => {
         const A = J => {
             J.key === "Escape" && S && F(),
