@@ -17259,6 +17259,7 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
 
   let isMounted = true;
   let playerInstance = null;
+  let retryCount = 0;
 
   const initPlayer = async () => {
     try {
@@ -17274,49 +17275,58 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
         return;
       }
 
+      // ✅ CLEAN VIDEO ELEMENT
+      A.pause();
+      A.src = "";
+      A.load();
+
       const R = new O.Player();
       playerInstance = R;
       a.current = R;
 
+      // Wait for attach stability
+      await new Promise(resolve => setTimeout(resolve, 100));
       await R.attach(A);
 
-      // UI config
-      const ui = new O.ui.Overlay(R, J, A);
-      ui.configure({
-        addBigPlayButton: true,
-        controlPanelElements: [
-          "mute", "play_pause", "time_and_duration", "spacer", 
-          "quality", "picture_in_picture", "fullscreen"
-        ],
-        seekBarColors: { base: "white", buffered: "red", played: "green" }
+      // ✅ MINIMAL UI - no interference
+      new O.ui.Overlay(R, J, A).configure({
+        controlPanelElements: ["play_pause", "mute", "time_and_duration", "fullscreen"]
       });
 
-      // Player config
+      // ✅ ULTRA-STABLE CONFIG - NO aggressive retry
       R.configure({
         drm: { clearKeys: { [t.keyId]: t.key } },
-        manifest: { defaultPresentationDelay: 5 },
         streaming: {
-          lowLatencyMode: true,
-          bufferingGoal: 10,
-          rebufferingGoal: 2,
-          safeSeekOffset: 5,
-          // ✅ PREVENT API INTERFERENCE
+          // FIXED: Conservative buffering - NO fast black screens
+          bufferingGoal: 20,
+          rebufferingGoal: 8,
+          bufferBehind: 30,
+          // DISABLE auto-retry - manual only
           retryParameters: {
-            timeout: 30000,
-            maxAttempts: 5,
-            baseDelay: 2000,
-            backoffFactor: 1.2,
-            fuzzFactor: 0.1
-          }
+            maxAttempts: 1,  // NO AUTO-RETRY
+            timeout: 45000,
+            baseDelay: 5000
+          },
+          // STABLE low latency
+          lowLatencyMode: false,
+          inbandTextTracksToOverlay: true
+        },
+        manifest: {
+          defaultPresentationDelay: 8
+        },
+        abr: {
+          enabled: true,
+          defaultBandwidthEstimate: 1000000
         }
       });
 
-      // ✅ FIXED: ONLY JioTV URLs - ignore Supabase API
+      // ✅ ONLY JioTV - BLOCK ALL ELSE
       if (t.cookie) {
         R.getNetworkingEngine().registerRequestFilter((type, request) => {
-          // Skip non-JioTV requests (Supabase API)
-          if (!request.uris[0]?.includes('jiotv') && 
-              !request.uris[0]?.includes('cdn.jio')) {
+          const url = request.uris?.[0];
+          // ✅ BLOCK Supabase/JSON/non-JioTV completely
+          if (!url || (!url.includes('jiotv') && !url.includes('jio'))) {
+            request.uris[0] = null; // BLOCK REQUEST
             return;
           }
 
@@ -17329,126 +17339,91 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
           
           if ((type === O.net.NetworkingEngine.RequestType.MANIFEST ||
                type === O.net.NetworkingEngine.RequestType.SEGMENT) &&
-              request.uris[0] && !request.uris[0].includes("__hdnea__")) {
-            const sep = request.uris[0].includes("?") ? "&" : "?";
+              !url.includes("__hdnea__")) {
+            const sep = url.includes("?") ? "&" : "?";
             request.uris[0] += sep + "__hdnea__=" + urlCookie;
           }
         });
       }
 
-      // ✅ FIXED: Ignore Supabase  API responses
-      R.getNetworkingEngine().registerResponseFilter((type, response) => {
-        // Skip Supabase API responses
-        if (response.headers?.['content-type']?.includes('application/json') ||
-            response.uris?.[0]?.includes('supabase')) {
-          return;
-        }
-        
-        if (response.status === 429) {
-          const retry = parseInt(response.headers["retry-after"] || "5", 10) * 1000;
-          return new Promise(resolve => setTimeout(resolve, retry));
-        }
-      });
+      // ✅ NO RESPONSE FILTER - prevents interference
+      // Removed completely - let Shaka handle internally
 
-      // ✅ ROBUST ERROR HANDLER - ignores API errors
+      // ✅ MINIMAL ERROR HANDLING - NO aggressive retry
       R.addEventListener("error", V => {
         if (!isMounted || V.detail.severity === 1) return;
         
         const error = V.detail;
         console.error("Shaka error:", error);
         
-        // ✅ ONLY retry JioTV stream errors, ignore API
-        if (error.category === 1 && ( // NETWORK_ERROR
-            error.uris?.[0]?.includes('jiotv') || 
-            error.uris?.[0]?.includes('cdn.jio'))) {
-          
-          if (l.current < xs) {
-            l.current++;
-            const delay = Math.min(l.current * 3000, 15000);
-            v("retrying");
-            m(`Connecting… (${l.current}/${xs})`);
-            p(true);
-            u.current = setTimeout(() => {
-              if (isMounted && a.current === R) {
-                d.current = false;
-                $(R);
-              }
-            }, delay);
-          } else {
-            T("Stream unavailable");
-          }
+        // ✅ SINGLE MANUAL RETRY ONLY
+        if (retryCount === 0 && error.category === 1) {
+          retryCount++;
+          v("retrying");
+          m("Retrying once...");
+          p(true);
+          setTimeout(() => {
+            if (isMounted && a.current === R) {
+              d.current = false;
+              $(R);
+            }
+          }, 5000);
+        } else {
+          T("Stream unavailable - check cookies");
         }
       });
 
-      // Loading states
+      // ✅ STATE TRACKING
       R.addEventListener("loading.complete", () => {
         if (isMounted) {
           v("ready");
-          m("Tap to Play");
+          m("Ready");
+          p(false);
         }
       });
 
       R.addEventListener("buffering", event => {
-        if (isMounted && event.buffering) {
-          v("loading");
-          m("Buffering…");
+        if (isMounted) {
+          if (event.buffering) {
+            v("loading");
+            m("Buffering...");
+          } else {
+            v("playing");
+          }
         }
       });
 
-      // Load stream
+      // ✅ STABLE LOAD
+      l.current = 0;
+      retryCount = 0;
+      v("loading");
+      m("Loading...");
+      p(true);
+      
       await $(R);
 
-      // ✅ STABLE AUTO-PLAY - won't pause on API calls
-      A.addEventListener("loadeddata", () => {
-        if (isMounted && h !== "playing") {
-          A.muted = true;
-          A.play().catch(() => {});
-        }
-      }, { once: true });
-
-      A.addEventListener("play", () => {
-        if (isMounted && !c.current) {
-          A.muted = false;
-          c.current = true;
-          z();
-        }
-      });
-
-      // ✅ PREVENT PAUSE on API calls
-      A.addEventListener("pause", () => {
-        // Auto-resume if buffering or API interference
-        if (h === "playing" && A.currentTime > 0) {
-          setTimeout(() => {
-            if (isMounted && A.paused) {
-              A.play().catch(() => {});
-            }
-          }, 500);
-        }
-      });
-
     } catch (error) {
-      console.error("Player init:", error);
-      if (isMounted) T("Player initialization failed");
+      console.error("Player init error:", error);
+      if (isMounted) T("Player failed");
     }
   };
 
   initPlayer();
 
+  // ✅ CLEANUP
   return () => {
     isMounted = false;
-    if (u.current) {
-      clearTimeout(u.current);
-      u.current = null;
-    }
+    if (u.current) clearTimeout(u.current);
     
     if (a.current && playerInstance === a.current) {
-      a.current.detach()
-        .then(() => a.current?.destroy().catch(console.error))
-        .catch(console.error)
-        .finally(() => { a.current = null; });
+      try {
+        playerInstance.detach();
+        playerInstance.destroy();
+      } catch {}
+      a.current = null;
     }
   };
-}, [t, $, T, z, h]),
+}, [t, $]),
     j.useEffect( () => {
         const A = J => {
             J.key === "Escape" && S && F(),
