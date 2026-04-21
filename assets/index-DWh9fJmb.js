@@ -17198,14 +17198,19 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
             return
         }
         try {
+            // FIX: Force muted to bypass browser autoplay blocks
+            J.muted = !0;
+            
             await A.load(t.url),
             l.current = 0,
             v("ready"),
             m("Tap to Play");
             try {
-                J.muted = !0,
+                // Try to play immediately while muted
                 await J.play(),
-                z()
+                z();
+                // Safely unmute after a short delay once playing is stable
+                setTimeout(() => { if(i.current) i.current.muted = false; }, 1000);
             } catch {
                 v("ready"),
                 m("Tap to Play")
@@ -17306,9 +17311,9 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
             ),
             R.configure({
                 streaming: {
-                    bufferingGoal: 12,
-                    rebufferingGoal: 4,
-                    bufferBehind: 15,
+                    bufferingGoal: 8, // Reduced for faster start
+                    rebufferingGoal: 2, // Reduced to prevent sticking
+                    bufferBehind: 10,
                     segmentPrefetchLimit: 2,
                     retryParameters: {
                         timeout: 2e4,
