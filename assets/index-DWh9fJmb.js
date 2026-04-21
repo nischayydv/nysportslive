@@ -17198,18 +17198,14 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
             return
         }
         try {
-            // FIX: Force muted to bypass browser autoplay blocks
             J.muted = !0;
-            
             await A.load(t.url),
             l.current = 0,
             v("ready"),
             m("Tap to Play");
             try {
-                // Try to play immediately while muted
                 await J.play(),
                 z();
-                // Safely unmute after a short delay once playing is stable
                 setTimeout(() => { if(i.current) i.current.muted = false; }, 1000);
             } catch {
                 v("ready"),
@@ -17245,7 +17241,7 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
         E(!0),
         setTimeout( () => E(!1), 2e3)
     }
-      , F = async () => {
+      , F = j.useCallback(async () => {
         const A = o.current;
         if (A)
             try {
@@ -17255,15 +17251,15 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
             } catch (J) {
                 console.error("Fullscreen error:", J)
             }
-    }
-    ;
-    return j.useEffect( () => {
+    }, [S]);
+
+    j.useEffect( () => {
         const A = i.current
           , J = o.current;
         if (!A || !J)
             return;
         let De = !1;
-        return (async () => {
+        (async () => {
             const O = window.shaka;
             if (!O) {
                 T("Player library not loaded");
@@ -17285,11 +17281,7 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
                 controlPanelElements: ["play_pause", "time_and_duration", "mute", "volume", "spacer", "quality", "language", "picture_in_picture", "fullscreen", "overflow_menu"]
             }),
             t.keyId && t.key && R.configure({
-                drm: {
-                    clearKeys: {
-                        [t.keyId]: t.key
-                    }
-                }
+                drm: { clearKeys: { [t.keyId]: t.key } }
             }),
             R.getNetworkingEngine().registerRequestFilter( (V, fe) => {
                 if (fe.headers.Referer = "https://www.jiotv.com/",
@@ -17300,87 +17292,51 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
                     const Ht = fe.uris[0].includes("?") ? "&" : "?";
                     fe.uris[0] += Ht + t.cookie
                 }
-            }
-            ),
-            R.getNetworkingEngine().registerResponseFilter( (V, fe) => {
-                if (fe.status === 429) {
-                    const Me = parseInt(fe.headers["retry-after"] || "10", 10) * 1e3;
-                    return new Promise(Ht => setTimeout(Ht, Math.min(Me, 3e4)))
-                }
-            }
-            ),
+            }),
             R.configure({
                 streaming: {
-                    bufferingGoal: 8, // Reduced for faster start
-                    rebufferingGoal: 2, // Reduced to prevent sticking
+                    bufferingGoal: 8,
+                    rebufferingGoal: 2,
                     bufferBehind: 10,
-                    segmentPrefetchLimit: 2,
-                    retryParameters: {
-                        timeout: 2e4,
-                        maxAttempts: 2,
-                        baseDelay: 4e3,
-                        backoffFactor: 2,
-                        fuzzFactor: .3
-                    }
-                },
-                manifest: {
-                    retryParameters: {
-                        timeout: 15e3,
-                        maxAttempts: 2,
-                        baseDelay: 4e3,
-                        backoffFactor: 2
-                    },
-                    dash: {
-                        ignoreMinBufferTime: !0,
-                        autoCorrectDrift: !0
-                    }
+                    retryParameters: { timeout: 2e4, maxAttempts: 2, baseDelay: 4e3 }
                 }
             }),
             R.addEventListener("error", V => {
                 if (!(De || V.detail.severity === 1))
                     if (l.current < xs) {
                         l.current++;
-                        const Me = Math.min(l.current * 4e3, 2e4);
                         v("retrying"),
-                        m(`Retrying… (${l.current}/${xs})`),
-                        p(!0),
-                        u.current = setTimeout( () => {
-                            d.current = !1,
-                            $(R)
-                        }
-                        , Me)
+                        u.current = setTimeout( () => { d.current = !1, $(R) }, l.current * 4e3)
                     } else
                         T("Unable to load. Cookies may be expired.")
-            }
-            ),
+            }),
             De || await $(R)
-        }
-        )(),
-        () => {
+        })();
+        return () => {
             De = !0,
             u.current && clearTimeout(u.current),
-            a.current && (a.current.detach().then( () => {
-                var O;
-                return (O = a.current) == null ? void 0 : O.destroy()
-            }
-            ).catch( () => {}
-            ),
-            a.current = null)
+            a.current && (a.current.detach().then(() => a.current?.destroy()).catch(() => {}), a.current = null)
         }
     }
-    , [t, $, T]),
+    , [t, $, T]);
+
+    // KEYBOARD LISTENER FIX: Added S and F to the dependency array
     j.useEffect( () => {
         const A = J => {
-            J.key === "Escape" && S && F(),
-            J.key === " " && (J.preventDefault(),
-            i.current && (i.current.paused ? i.current.play() : i.current.pause())),
-            J.key === "f" && F()
+            if (J.key === "Escape" && S) F();
+            if (J.key === " ") {
+                J.preventDefault();
+                if (i.current) {
+                    i.current.paused ? i.current.play() : i.current.pause();
+                }
+            }
+            if (J.key === "f") F();
         }
         ;
-        return document.addEventListener("keydown", A),
-        () => document.removeEventListener("keydown", A)
-    }
-    , [S]),
+        document.addEventListener("keydown", A);
+        return () => document.removeEventListener("keydown", A);
+    }, [S, F]); // Dependencies updated here
+
     S ? g.jsxs("div", {
         className: "fixed inset-0 z-50 bg-black flex flex-col",
         children: [g.jsxs("div", {
