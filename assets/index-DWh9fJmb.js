@@ -17334,8 +17334,8 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
         }
         ;
         document.addEventListener("keydown", A);
-        return () => document.removeEventListener("keydown", A);
-    }, [S, F]); // Dependencies updated here
+        return () => document.removeEventListener("keydown", A)}
+     , [S]),
 
     S ? g.jsxs("div", {
         className: "fixed inset-0 z-50 bg-black flex flex-col",
