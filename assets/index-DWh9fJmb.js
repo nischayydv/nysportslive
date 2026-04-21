@@ -17257,9 +17257,7 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
     J = o.current;
   if (!A || !J) return;
 
-  let isMounted = true;
   let playerInstance = null;
-  let retryCount = 0;
 
   const initPlayer = async () => {
     try {
@@ -17269,161 +17267,110 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
         return;
       }
 
-      O.polyfill.installAll();
+      shaka.polyfill.installAll();
       if (!O.Player.isBrowserSupported()) {
         T("Browser not supported");
         return;
       }
 
-      // ✅ CLEAN VIDEO ELEMENT
-      A.pause();
-      A.src = "";
-      A.load();
+      const video = A;
+      video.muted = true;
 
-      const R = new O.Player();
-      playerInstance = R;
-      a.current = R;
+      const player = new O.Player();
+      playerInstance = player;
+      a.current = player;
 
-      // Wait for attach stability
-      await new Promise(resolve => setTimeout(resolve, 100));
-      await R.attach(A);
+      await player.attach(video);
 
-      // ✅ MINIMAL UI - no interference
-      new O.ui.Overlay(R, J, A).configure({
-        controlPanelElements: ["play_pause", "mute", "time_and_duration", "fullscreen"]
-      });
-
-      // ✅ ULTRA-STABLE CONFIG - NO aggressive retry
-      R.configure({
-        drm: { clearKeys: { [t.keyId]: t.key } },
-        streaming: {
-          // FIXED: Conservative buffering - NO fast black screens
-          bufferingGoal: 20,
-          rebufferingGoal: 8,
-          bufferBehind: 30,
-          // DISABLE auto-retry - manual only
-          retryParameters: {
-            maxAttempts: 1,  // NO AUTO-RETRY
-            timeout: 45000,
-            baseDelay: 5000
-          },
-          // STABLE low latency
-          lowLatencyMode: false,
-          inbandTextTracksToOverlay: true
-        },
-        manifest: {
-          defaultPresentationDelay: 8
-        },
-        abr: {
-          enabled: true,
-          defaultBandwidthEstimate: 1000000
+      // EXACT UI from your HTML
+      const ui = new O.ui.Overlay(player, J, video);
+      ui.configure({
+        addBigPlayButton: true,
+        controlPanelElements: [
+          "mute", "play_pause", "time_and_duration", "spacer", 
+          "quality", "picture_in_picture", "fullscreen"
+        ],
+        seekBarColors: {
+          base: "white",
+          buffered: "red", 
+          played: "green"
         }
       });
 
-      // ✅ ONLY JioTV - BLOCK ALL ELSE
-      if (t.cookie) {
-        R.getNetworkingEngine().registerRequestFilter((type, request) => {
-          const url = request.uris?.[0];
-          // ✅ BLOCK Supabase/JSON/non-JioTV completely
-          if (!url || (!url.includes('jiotv') && !url.includes('jio'))) {
-            request.uris[0] = null; // BLOCK REQUEST
-            return;
-          }
+      // EXACT player config from your HTML
+      player.configure({
+        drm: { clearKeys: { [t.keyId]: t.key } },
+        manifest: { defaultPresentationDelay: 5 },
+        streaming: {
+          lowLatencyMode: true,
+          bufferingGoal: 10,
+          rebufferingGoal: 2,
+          safeSeekOffset: 5
+        }
+      });
 
+      // EXACT cookie logic from your HTML
+      if (t.cookie) {
+        player.getNetworkingEngine().registerRequestFilter((type, request) => {
           request.headers["Referer"] = "https://www.jiotv.com/";
           request.headers["User-Agent"] = "plaYtv/7.1.5 (Linux;Android 13) ExoPlayerLib/2.11.6";
           request.headers["Cookie"] = t.cookie;
 
           let urlCookie = t.cookie.startsWith("__hdnea__=") ? 
             t.cookie.substring(10) : t.cookie;
-          
+
           if ((type === O.net.NetworkingEngine.RequestType.MANIFEST ||
                type === O.net.NetworkingEngine.RequestType.SEGMENT) &&
-              !url.includes("__hdnea__")) {
-            const sep = url.includes("?") ? "&" : "?";
+              !request.uris[0].includes("__hdnea__")) {
+            const sep = request.uris[0].includes("?") ? "&" : "?";
             request.uris[0] += sep + "__hdnea__=" + urlCookie;
           }
         });
       }
 
-      // ✅ NO RESPONSE FILTER - prevents interference
-      // Removed completely - let Shaka handle internally
-
-      // ✅ MINIMAL ERROR HANDLING - NO aggressive retry
-      R.addEventListener("error", V => {
-        if (!isMounted || V.detail.severity === 1) return;
-        
-        const error = V.detail;
-        console.error("Shaka error:", error);
-        
-        // ✅ SINGLE MANUAL RETRY ONLY
-        if (retryCount === 0 && error.category === 1) {
-          retryCount++;
-          v("retrying");
-          m("Retrying once...");
-          p(true);
-          setTimeout(() => {
-            if (isMounted && a.current === R) {
-              d.current = false;
-              $(R);
-            }
-          }, 5000);
-        } else {
-          T("Stream unavailable - check cookies");
-        }
+      // Simple error - NO complex retry
+      player.addEventListener("error", (e) => {
+        console.error("Player error:", e.detail);
+        T("Stream error - check cookies");
       });
 
-      // ✅ STATE TRACKING
-      R.addEventListener("loading.complete", () => {
-        if (isMounted) {
-          v("ready");
-          m("Ready");
-          p(false);
+      // Load EXACTLY like your HTML
+      await player.load(t.url);
+      
+      // EXACT play logic from your HTML
+      video.play().catch(() => {});
+      
+      video.addEventListener("play", () => {
+        video.muted = false;
+        if (!c.current) {
+          c.current = true;
+          z();
         }
+        v("playing");
+        p(false);
       });
 
-      R.addEventListener("buffering", event => {
-        if (isMounted) {
-          if (event.buffering) {
-            v("loading");
-            m("Buffering...");
-          } else {
-            v("playing");
-          }
-        }
-      });
-
-      // ✅ STABLE LOAD
-      l.current = 0;
-      retryCount = 0;
       v("loading");
       m("Loading...");
-      p(true);
-      
-      await $(R);
 
-    } catch (error) {
-      console.error("Player init error:", error);
-      if (isMounted) T("Player failed");
+    } catch (e) {
+      console.error("Init error:", e);
+      T("Failed to load player");
     }
   };
 
   initPlayer();
 
-  // ✅ CLEANUP
   return () => {
-    isMounted = false;
     if (u.current) clearTimeout(u.current);
-    
-    if (a.current && playerInstance === a.current) {
-      try {
-        playerInstance.detach();
-        playerInstance.destroy();
-      } catch {}
+    if (playerInstance && a.current === playerInstance) {
+      playerInstance.detach().then(() => {
+        playerInstance.destroy().catch(() => {});
+      }).catch(() => {});
       a.current = null;
     }
   };
-}, [t, $]),
+}, [t.url, t.keyId, t.key, t.cookie, z, T]),
     j.useEffect( () => {
         const A = J => {
             J.key === "Escape" && S && F(),
