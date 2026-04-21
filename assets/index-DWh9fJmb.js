@@ -17142,460 +17142,351 @@ function $v({channelId: t, isEmbedded: e=!0}) {
     }) : null
 }
 const xs = 3;
-function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalViews: s}) {
-    const i = j.useRef(null)
-      , o = j.useRef(null)
-      , a = j.useRef(null)
-      , l = j.useRef(0)
-      , u = j.useRef(null)
-      , c = j.useRef(!1)
-      , d = j.useRef(!1)
-      , [h,v] = j.useState("loading")
-      , [y,w] = j.useState("")
-      , [k,m] = j.useState("Loading stream…")
-      , [f,p] = j.useState(!0)
-      , [_,E] = j.useState(!1)
-      , [S,b] = j.useState(!1)
-      , T = j.useCallback(A => {
-        w(A),
-        v("error"),
-        p(!0)
-    }
-    , [])
-      , z = j.useCallback( () => {
-        p(!1),
-        v("playing"),
-        c.current || (c.current = !0,
-        n())
-    }
-    , [n])
-      , N = j.useCallback(async () => {
-        const A = i.current;
-        if (!(!A || h !== "ready"))
-            try {
-                A.muted = !1,
-                A.volume = .8,
-                await A.play(),
-                z()
-            } catch {
-                try {
-                    A.muted = !0,
-                    await A.play(),
-                    z()
-                } catch {
-                    m("Tap again to play")
-                }
-            }
-    }
-    , [h, z])
-      , $ = j.useCallback(async A => {
-        if (d.current)
-            return;
-        d.current = !0;
-        const J = i.current;
-        if (!J) {
-            d.current = !1;
-            return
+// ═══════════════════════════════════════════════════════════
+//  MINIMAL PATCH — replace ONLY the Lv function in your file
+//  Everything else stays the same.
+// ═══════════════════════════════════════════════════════════
+//
+//  ROOT CAUSE of play→pause→play loop:
+//    • z (onVideoStart) and T (onError) were created with
+//      useCallback but their deps changed every render,
+//      so the player useEffect saw new function references
+//      and re-ran → destroyed old player → created new one
+//      → video stuttered / toggled.
+//
+//  FIX STRATEGY:
+//    1. Store channel props in refs — stable, never change.
+//    2. Store callbacks in refs — stable, never change.
+//    3. Player useEffect dependency array = [] (runs once).
+//    4. Remove duplicate retry/L callback that also called $.
+// ═══════════════════════════════════════════════════════════
+
+function Lv({ channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalViews: s }) {
+  const i = j.useRef(null);   // <video>
+  const o = j.useRef(null);   // shaka container div
+
+  // ── stable refs for volatile values ──────────────────────
+  const urlRef    = j.useRef(t.url);
+  const keyIdRef  = j.useRef(t.keyId);
+  const keyRef    = j.useRef(t.key);
+  const cookieRef = j.useRef(t.cookie);
+  const onStartRef = j.useRef(n);
+  const startedRef = j.useRef(false);
+
+  // keep refs current on prop changes WITHOUT triggering re-init
+  j.useEffect(() => { urlRef.current    = t.url;    }, [t.url]);
+  j.useEffect(() => { keyIdRef.current  = t.keyId;  }, [t.keyId]);
+  j.useEffect(() => { keyRef.current    = t.key;    }, [t.key]);
+  j.useEffect(() => { cookieRef.current = t.cookie; }, [t.cookie]);
+  j.useEffect(() => { onStartRef.current = n;        }, [n]);
+
+  // ── UI state ──────────────────────────────────────────────
+  const [h, v]  = j.useState("loading");   // loading | playing | error
+  const [y, w]  = j.useState("");
+  const [_, E]  = j.useState(false);       // copied
+  const [S, b]  = j.useState(false);       // fullscreen
+
+  // ── ONE-TIME player init — deps intentionally [] ─────────
+  j.useEffect(() => {
+    const video     = i.current;
+    const container = o.current;
+    if (!video || !container) return;
+
+    let player   = null;
+    let dead     = false;
+
+    const initPlayer = async () => {
+      try {
+        const O = window.shaka;
+        if (!O) { v("error"); w("Shaka player not loaded"); return; }
+
+        O.polyfill.installAll();
+        if (!O.Player.isBrowserSupported()) {
+          v("error"); w("Browser not supported"); return;
         }
-        try {
-            await A.load(t.url),
-            l.current = 0,
-            v("ready"),
-            m("Tap to Play");
-            try {
-                J.muted = !0,
-                await J.play(),
-                z()
-            } catch {
-                v("ready"),
-                m("Tap to Play")
-            }
-            d.current = !1
-        } catch (De) {
-            if (console.error("Load error:", De),
-            d.current = !1,
-            l.current < xs) {
-                l.current++;
-                const C = l.current * 4e3;
-                v("retrying"),
-                m(`Connecting… (${l.current}/${xs})`),
-                u.current = setTimeout( () => $(A), C)
-            } else
-                T("Stream unavailable. Check link or try again.")
-        }
-    }
-    , [t.url, z, T])
-      , L = j.useCallback( () => {
-        l.current = 0,
-        d.current = !1,
-        v("loading"),
-        m("Reconnecting…"),
-        p(!0),
-        a.current && $(a.current)
-    }
-    , [$])
-      , W = () => {
-        const A = `${window.location.origin}?channel=${t.id}`;
-        navigator.clipboard.writeText(A),
-        E(!0),
-        setTimeout( () => E(!1), 2e3)
-    }
-      , F = async () => {
-        const A = o.current;
-        if (A)
-            try {
-                S ? (document.fullscreenElement && await document.exitFullscreen(),
-                b(!1)) : (A.requestFullscreen && await A.requestFullscreen(),
-                b(!0))
-            } catch (J) {
-                console.error("Fullscreen error:", J)
-            }
-    }
-    ;
-    return j.useEffect(() => {
-  const A = i.current,
-    J = o.current;
-  if (!A || !J) return;
 
-  let playerInstance = null;
+        video.muted = true;
+        player = new O.Player();
+        await player.attach(video);
 
-  const initPlayer = async () => {
-    try {
-      const O = window.shaka;
-      if (!O) {
-        T("Player library not loaded");
-        return;
-      }
+        // Shaka UI
+        const ui = new O.ui.Overlay(player, container, video);
+        ui.configure({
+          addBigPlayButton: true,
+          controlPanelElements: [
+            "mute","play_pause","time_and_duration",
+            "spacer","quality","picture_in_picture","fullscreen",
+          ],
+          seekBarColors: { base:"white", buffered:"red", played:"green" },
+        });
 
-      shaka.polyfill.installAll();
-      if (!O.Player.isBrowserSupported()) {
-        T("Browser not supported");
-        return;
-      }
+        // DRM / stream config — read from refs (stable)
+        const clearKeys = keyIdRef.current && keyRef.current
+          ? { [keyIdRef.current]: keyRef.current }
+          : {};
 
-      const video = A;
-      video.muted = true;
+        player.configure({
+          drm: { clearKeys },
+          manifest: { defaultPresentationDelay: 5 },
+          streaming: {
+            lowLatencyMode: true,
+            bufferingGoal: 10,
+            rebufferingGoal: 2,
+            safeSeekOffset: 5,
+          },
+        });
 
-      const player = new O.Player();
-      playerInstance = player;
-      a.current = player;
+        // Cookie filter — read from ref
+        if (cookieRef.current) {
+          player.getNetworkingEngine().registerRequestFilter((type, request) => {
+            request.headers["Referer"]    = "https://www.jiotv.com/";
+            request.headers["User-Agent"] = "plaYtv/7.1.5 (Linux;Android 13) ExoPlayerLib/2.11.6";
+            request.headers["Cookie"]     = cookieRef.current;
 
-      await player.attach(video);
+            let urlCookie = cookieRef.current.startsWith("__hdnea__=")
+              ? cookieRef.current.substring(10)
+              : cookieRef.current;
 
-      // EXACT UI from your HTML
-      const ui = new O.ui.Overlay(player, J, video);
-      ui.configure({
-        addBigPlayButton: true,
-        controlPanelElements: [
-          "mute", "play_pause", "time_and_duration", "spacer", 
-          "quality", "picture_in_picture", "fullscreen"
-        ],
-        seekBarColors: {
-          base: "white",
-          buffered: "red", 
-          played: "green"
-        }
-      });
-
-      // EXACT player config from your HTML
-      player.configure({
-        drm: { clearKeys: { [t.keyId]: t.key } },
-        manifest: { defaultPresentationDelay: 5 },
-        streaming: {
-          lowLatencyMode: true,
-          bufferingGoal: 10,
-          rebufferingGoal: 2,
-          safeSeekOffset: 5
-        }
-      });
-
-      // EXACT cookie logic from your HTML
-      if (t.cookie) {
-        player.getNetworkingEngine().registerRequestFilter((type, request) => {
-          request.headers["Referer"] = "https://www.jiotv.com/";
-          request.headers["User-Agent"] = "plaYtv/7.1.5 (Linux;Android 13) ExoPlayerLib/2.11.6";
-          request.headers["Cookie"] = t.cookie;
-
-          let urlCookie = t.cookie.startsWith("__hdnea__=") ? 
-            t.cookie.substring(10) : t.cookie;
-
-          if ((type === O.net.NetworkingEngine.RequestType.MANIFEST ||
+            if (
+              (type === O.net.NetworkingEngine.RequestType.MANIFEST ||
                type === O.net.NetworkingEngine.RequestType.SEGMENT) &&
-              !request.uris[0].includes("__hdnea__")) {
-            const sep = request.uris[0].includes("?") ? "&" : "?";
-            request.uris[0] += sep + "__hdnea__=" + urlCookie;
+              !request.uris[0].includes("__hdnea__")
+            ) {
+              const sep = request.uris[0].includes("?") ? "&" : "?";
+              request.uris[0] += sep + "__hdnea__=" + urlCookie;
+            }
+          });
+        }
+
+        // Error event
+        player.addEventListener("error", (ev) => {
+          if (dead) return;
+          console.error("Shaka error:", ev.detail);
+          v("error");
+          w("Stream error – check cookies or retry");
+        });
+
+        // "playing" fires when video actually starts rendering frames
+        video.addEventListener("playing", () => {
+          if (dead) return;
+          v("playing");
+          if (!startedRef.current) {
+            startedRef.current = true;
+            onStartRef.current?.();
           }
         });
+
+        // "waiting" fires on buffering
+        video.addEventListener("waiting", () => {
+          if (dead) return;
+          // Only show loading spinner if we haven't started yet
+          // (don't interrupt a playing stream mid-buffer)
+        });
+
+        // Load
+        await player.load(urlRef.current);
+
+        // Try autoplay (muted)
+        try { await video.play(); } catch {}
+
+      } catch (err) {
+        if (dead) return;
+        console.error("Player init error:", err);
+        v("error");
+        w("Failed to load player");
       }
+    };
 
-      // Simple error - NO complex retry
-      player.addEventListener("error", (e) => {
-        console.error("Player error:", e.detail);
-        T("Stream error - check cookies");
-      });
+    initPlayer();
 
-      // Load EXACTLY like your HTML
-      await player.load(t.url);
-      
-      // EXACT play logic from your HTML
-      video.play().catch(() => {});
-      
-      video.addEventListener("play", () => {
-        video.muted = false;
-        if (!c.current) {
-          c.current = true;
-          z();
-        }
-        v("playing");
-        p(false);
-      });
+    // ── cleanup: runs when component unmounts ─────────────
+    return () => {
+      dead = true;
+      if (player) {
+        player.detach()
+          .then(() => player.destroy())
+          .catch(() => {});
+        player = null;
+      }
+    };
+  }, []); // ← EMPTY ARRAY = runs exactly once
 
-      v("loading");
-      m("Loading...");
+  // ── helpers ───────────────────────────────────────────────
+  const L = j.useCallback(() => {
+    // Hard reload is the safest retry (no double-player risk)
+    window.location.reload();
+  }, []);
 
-    } catch (e) {
-      console.error("Init error:", e);
-      T("Failed to load player");
+  const W = j.useCallback(() => {
+    const A = `${window.location.origin}?channel=${t.id}`;
+    navigator.clipboard.writeText(A);
+    E(true);
+    setTimeout(() => E(false), 2000);
+  }, [t.id]);
+
+  const F = j.useCallback(async () => {
+    const A = o.current;
+    if (!A) return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        b(false);
+      } else {
+        await A.requestFullscreen();
+        b(true);
+      }
+    } catch (err) {
+      console.error("Fullscreen error:", err);
     }
-  };
+  }, []);
 
-  initPlayer();
+  // ── ESC / space / f hotkeys ───────────────────────────────
+  j.useEffect(() => {
+    const handler = (ev) => {
+      if (ev.key === "Escape" && S) F();
+      if (ev.key === " ") {
+        ev.preventDefault();
+        if (i.current) i.current.paused ? i.current.play() : i.current.pause();
+      }
+      if (ev.key === "f") F();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [S, F]);
 
-  return () => {
-    if (u.current) clearTimeout(u.current);
-    if (playerInstance && a.current === playerInstance) {
-      playerInstance.detach().then(() => {
-        playerInstance.destroy().catch(() => {});
-      }).catch(() => {});
-      a.current = null;
-    }
-  };
-}, [t.url, t.keyId, t.key, t.cookie, z, T]),
-    j.useEffect( () => {
-        const A = J => {
-            J.key === "Escape" && S && F(),
-            J.key === " " && (J.preventDefault(),
-            i.current && (i.current.paused ? i.current.play() : i.current.pause())),
-            J.key === "f" && F()
-        }
-        ;
-        return document.addEventListener("keydown", A),
-        () => document.removeEventListener("keydown", A)
-    }
-    , [S]),
-    S ? g.jsxs("div", {
-        className: "fixed inset-0 z-50 bg-black flex flex-col",
-        children: [g.jsxs("div", {
-            ref: o,
-            className: "shaka-video-container youtube-theme absolute inset-0 w-full h-full",
-            "data-shaka-player": !0,
-            children: [g.jsx("video", {
-                ref: i,
-                className: "w-full h-full bg-black object-contain",
-                playsInline: !0,
-                preload: "auto"
-            }), f && g.jsxs("div", {
-                className: `absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 sm:gap-6 cursor-pointer backdrop-blur-sm transition-all duration-500 ${h === "playing" ? "opacity-0 pointer-events-none" : "opacity-100"}`,
-                onClick: N,
-                children: [(h === "loading" || h === "retrying") && g.jsxs("div", {
-                    className: "relative w-12 h-12 sm:w-16 sm:h-16",
-                    children: [g.jsx("div", {
-                        className: "absolute inset-0 border-4 border-orange-500/20 rounded-full animate-spin"
-                    }), g.jsx("div", {
-                        className: "absolute inset-1 border-4 border-transparent border-t-orange-500 rounded-full animate-spin",
-                        style: {
-                            animationDirection: "reverse",
-                            animationDuration: "1.5s"
-                        }
-                    }), g.jsx("div", {
-                        className: "absolute inset-3 bg-gradient-to-br from-orange-500/20 to-transparent rounded-full animate-pulse"
-                    })]
-                }), h === "ready" && g.jsxs("button", {
-                    className: "relative w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden group",
-                    onClick: N,
-                    "aria-label": "Play",
-                    children: [g.jsx("div", {
-                        className: "absolute inset-0 bg-gradient-to-r from-orange-500 to-yellow-500 animate-pulse group-hover:from-orange-400 group-hover:to-yellow-400 transition-all"
-                    }), g.jsx("div", {
-                        className: "absolute inset-1 bg-black rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300",
-                        children: g.jsx("svg", {
-                            viewBox: "0 0 24 24",
-                            className: "w-6 h-6 sm:w-8 sm:h-8 fill-orange-400 ml-1.5 group-hover:fill-orange-300",
-                            children: g.jsx("path", {
-                                d: "M8 5v14l11-7z"
-                            })
-                        })
-                    })]
-                }), h !== "error" && g.jsx("p", {
-                    className: "text-white/90 text-xs sm:text-sm tracking-wide drop-shadow-xl font-medium animate-pulse",
-                    children: k
-                })]
-            }), h === "error" && g.jsxs("div", {
-                className: "absolute inset-0 z-40 bg-gradient-to-br from-black/80 to-black/40 backdrop-blur-sm flex flex-col items-center justify-center gap-3 sm:gap-5 p-4 sm:p-6 text-center",
-                children: [g.jsx("div", {
-                    className: "w-14 h-14 sm:w-20 sm:h-20 bg-gradient-to-br from-orange-500/30 to-red-500/20 rounded-full flex items-center justify-center border-2 border-orange-500/40 animate-pulse",
-                    children: g.jsx(Tu, {
-                        size: 24,
-                        className: "sm:w-8 sm:h-8 text-orange-400 animate-spin"
-                    })
-                }), g.jsxs("div", {
-                    children: [g.jsx("p", {
-                        className: "text-orange-300 font-bold text-xs sm:text-sm mb-1",
-                        children: "Stream Error"
-                    }), g.jsx("p", {
-                        className: "text-gray-400 text-xs leading-relaxed max-w-xs",
-                        children: y
-                    })]
-                }), g.jsxs("button", {
-                    onClick: L,
-                    className: "flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-yellow-500 active:from-orange-700 active:to-orange-600 text-white rounded-full text-xs sm:text-sm font-bold transition-all duration-300 shadow-lg shadow-orange-500/30 hover:shadow-lg hover:shadow-orange-400/50",
-                    children: [g.jsx(ra, {
-                        size: 14,
-                        className: "sm:w-4 sm:h-4"
-                    }), "Retry Stream"]
-                })]
-            })]
-        }), g.jsx("button", {
-            onClick: () => F(),
-            className: "absolute top-4 right-4 z-50 w-10 h-10 bg-gray-800/80 hover:bg-red-500 rounded-full flex items-center justify-center transition-all duration-200",
-            "aria-label": "Exit fullscreen",
-            children: g.jsx(Nu, {
-                size: 20,
-                className: "text-white"
-            })
-        })]
-    }) : g.jsxs("div", {
-        className: "fixed inset-0 z-50 bg-black flex flex-col overflow-y-auto",
-        children: [g.jsxs("div", {
-            className: "flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-gray-950 via-gray-900 to-gray-950 backdrop-blur-md border-b border-orange-500/20 flex-shrink-0 gap-1.5 sm:gap-3",
-            children: [g.jsxs("div", {
-                className: "flex items-center gap-2 min-w-0 flex-1",
-                children: [t.logo && g.jsx("img", {
-                    src: t.logo,
-                    alt: t.name,
-                    className: "h-6 sm:h-8 w-auto object-contain flex-shrink-0"
-                }), g.jsx("div", {
-                    className: "min-w-0",
-                    children: g.jsx("h2", {
-                        className: "text-white font-bold text-xs sm:text-sm truncate",
-                        children: t.name
-                    })
-                })]
-            }), g.jsxs("div", {
-                className: "flex items-center gap-1 sm:gap-2 flex-shrink-0",
-                children: [g.jsxs("div", {
-                    className: "flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-red-600/30 to-red-500/20 border border-red-500/40 rounded-full text-xs font-bold text-red-300 hidden sm:flex",
-                    children: [g.jsx(ul, {
-                        size: 12,
-                        className: "animate-pulse flex-shrink-0"
-                    }), g.jsx("span", {
-                        className: "tabular-nums",
-                        children: r.toLocaleString()
-                    })]
-                }), g.jsx("button", {
-                    onClick: W,
-                    className: "w-7 h-7 sm:w-8 sm:h-8 hover:bg-orange-500/20 active:bg-orange-500/30 rounded-full flex items-center justify-center transition-colors duration-200 border border-orange-500/10 hover:border-orange-500/30 flex-shrink-0",
-                    title: "Copy share link",
-                    children: g.jsx(dh, {
-                        size: 14,
-                        className: _ ? "text-orange-300" : "text-orange-400"
-                    })
-                }), g.jsx("button", {
-                    onClick: () => F(),
-                    className: "w-7 h-7 sm:w-8 sm:h-8 hover:bg-blue-500/20 active:bg-blue-500/30 rounded-full flex items-center justify-center transition-colors duration-200 border border-blue-500/10 hover:border-blue-500/30 flex-shrink-0",
-                    title: "Fullscreen",
-                    children: g.jsx(fm, {
-                        size: 14,
-                        className: "text-blue-400"
-                    })
-                }), g.jsx("button", {
-                    onClick: e,
-                    className: "w-7 h-7 sm:w-8 sm:h-8 bg-gray-800/80 hover:bg-red-500 active:bg-red-600 rounded-full flex items-center justify-center transition-all duration-200 border border-gray-700 hover:border-red-500 flex-shrink-0",
-                    "aria-label": "Close",
-                    children: g.jsx(Nu, {
-                        size: 15,
-                        className: "text-gray-300 hover:text-white"
-                    })
-                })]
-            })]
-        }), g.jsx("div", {
-            className: "relative w-full bg-black aspect-video flex-shrink-0",
-            children: g.jsxs("div", {
-                ref: o,
-                className: "shaka-video-container youtube-theme absolute inset-0 w-full h-full",
-                "data-shaka-player": !0,
-                children: [g.jsx("video", {
-                    ref: i,
-                    className: "w-full h-full bg-black object-contain",
-                    playsInline: !0,
-                    preload: "auto"
-                }), f && g.jsxs("div", {
-                    className: `absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 cursor-pointer backdrop-blur-sm transition-all duration-500 ${h === "playing" ? "opacity-0 pointer-events-none" : "opacity-100"}`,
-                    onClick: N,
-                    children: [(h === "loading" || h === "retrying") && g.jsxs("div", {
-                        className: "relative w-12 h-12 sm:w-14 sm:h-14",
-                        children: [g.jsx("div", {
-                            className: "absolute inset-0 border-4 border-orange-500/20 rounded-full animate-spin"
-                        }), g.jsx("div", {
-                            className: "absolute inset-1 border-4 border-transparent border-t-orange-500 rounded-full animate-spin",
-                            style: {
-                                animationDirection: "reverse",
-                                animationDuration: "1.5s"
-                            }
-                        })]
-                    }), h === "ready" && g.jsxs("button", {
-                        className: "relative w-14 h-14 rounded-full overflow-hidden group",
-                        onClick: N,
-                        "aria-label": "Play",
-                        children: [g.jsx("div", {
-                            className: "absolute inset-0 bg-gradient-to-r from-orange-500 to-yellow-500 animate-pulse group-hover:from-orange-400 group-hover:to-yellow-400 transition-all"
-                        }), g.jsx("div", {
-                            className: "absolute inset-1 bg-black rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300",
-                            children: g.jsx("svg", {
-                                viewBox: "0 0 24 24",
-                                className: "w-5 h-5 fill-orange-400 ml-1 group-hover:fill-orange-300",
-                                children: g.jsx("path", {
-                                    d: "M8 5v14l11-7z"
-                                })
-                            })
-                        })]
-                    }), h !== "error" && g.jsx("p", {
-                        className: "text-white/90 text-xs tracking-wide drop-shadow-xl font-medium animate-pulse",
-                        children: k
-                    })]
-                }), h === "error" && g.jsxs("div", {
-                    className: "absolute inset-0 z-40 bg-gradient-to-br from-black/80 to-black/40 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-4 text-center",
-                    children: [g.jsx("div", {
-                        className: "w-12 h-12 bg-gradient-to-br from-orange-500/30 to-red-500/20 rounded-full flex items-center justify-center border-2 border-orange-500/40 animate-pulse",
-                        children: g.jsx(Tu, {
-                            size: 20,
-                            className: "text-orange-400 animate-spin"
-                        })
-                    }), g.jsxs("div", {
-                        children: [g.jsx("p", {
-                            className: "text-orange-300 font-bold text-xs mb-1",
-                            children: "Stream Error"
-                        }), g.jsx("p", {
-                            className: "text-gray-400 text-xs leading-relaxed max-w-xs",
-                            children: y
-                        })]
-                    }), g.jsxs("button", {
-                        onClick: L,
-                        className: "flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-yellow-500 text-white rounded-full text-xs font-bold transition-all duration-300 shadow-lg shadow-orange-500/30",
-                        children: [g.jsx(ra, {
-                            size: 12
-                        }), "Retry"]
-                    })]
-                })]
-            })
-        }), g.jsx($v, {
-            channelId: t.id,
-            isEmbedded: !0
-        }), g.jsx("div", {
-            className: "text-center py-2 text-xs text-gray-500 flex-shrink-0",
-            children: "Press ESC or click X to close"
-        })]
-    })
+  // ── RENDER ────────────────────────────────────────────────
+  return S ? (
+    // ── Fullscreen mode ──
+    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      <div ref={o}
+        className="shaka-video-container youtube-theme absolute inset-0 w-full h-full"
+        data-shaka-player>
+        <video ref={i}
+          className="w-full h-full bg-black object-contain"
+          playsInline preload="auto" />
+
+        {/* Loading */}
+        {h === "loading" && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/60 pointer-events-none">
+            <div className="relative w-14 h-14">
+              <div className="absolute inset-0 border-4 border-orange-500/20 rounded-full animate-spin" />
+              <div className="absolute inset-1 border-4 border-transparent border-t-orange-500 rounded-full animate-spin"
+                style={{ animationDirection:"reverse", animationDuration:"1.5s" }} />
+            </div>
+            <p className="text-white/80 text-sm animate-pulse">Loading stream…</p>
+          </div>
+        )}
+
+        {/* Error */}
+        {h === "error" && (
+          <div className="absolute inset-0 z-40 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center gap-4 p-6 text-center">
+            <div className="w-16 h-16 bg-orange-500/20 rounded-full flex items-center justify-center border-2 border-orange-500/40">
+              <Tu size={28} className="text-orange-400" />
+            </div>
+            <div>
+              <p className="text-orange-300 font-bold text-sm mb-1">Stream Error</p>
+              <p className="text-gray-400 text-xs leading-relaxed max-w-xs">{y}</p>
+            </div>
+            <button onClick={L}
+              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-yellow-500 text-white rounded-full text-sm font-bold transition-all shadow-lg shadow-orange-500/30">
+              <ra size={16} />
+              Retry
+            </button>
+          </div>
+        )}
+      </div>
+
+      <button onClick={F}
+        className="absolute top-4 right-4 z-50 w-10 h-10 bg-gray-800/80 hover:bg-red-500 rounded-full flex items-center justify-center transition-all">
+        <Nu size={20} className="text-white" />
+      </button>
+    </div>
+  ) : (
+    // ── Normal (windowed) mode ──
+    <div className="fixed inset-0 z-50 bg-black flex flex-col overflow-y-auto">
+
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-gray-950 via-gray-900 to-gray-950 border-b border-orange-500/20 flex-shrink-0 gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {t.logo && (
+            <img src={t.logo} alt={t.name}
+              className="h-6 sm:h-8 w-auto object-contain flex-shrink-0" />
+          )}
+          <h2 className="text-white font-bold text-xs sm:text-sm truncate">{t.name}</h2>
+        </div>
+
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+          <div className="hidden sm:flex items-center gap-1 px-2 py-1 bg-red-600/30 border border-red-500/40 rounded-full text-xs font-bold text-red-300">
+            <ul size={12} className="animate-pulse" />
+            <span>{r.toLocaleString()}</span>
+          </div>
+
+          <button onClick={W}
+            className="w-7 h-7 sm:w-8 sm:h-8 hover:bg-orange-500/20 active:bg-orange-500/30 rounded-full flex items-center justify-center transition-colors border border-orange-500/10 hover:border-orange-500/30">
+            <dh size={14} className={_ ? "text-orange-300" : "text-orange-400"} />
+          </button>
+
+          <button onClick={F}
+            className="w-7 h-7 sm:w-8 sm:h-8 hover:bg-blue-500/20 rounded-full flex items-center justify-center transition-colors border border-blue-500/10 hover:border-blue-500/30">
+            <fm size={14} className="text-blue-400" />
+          </button>
+
+          <button onClick={e}
+            className="w-7 h-7 sm:w-8 sm:h-8 bg-gray-800/80 hover:bg-red-500 rounded-full flex items-center justify-center transition-all border border-gray-700 hover:border-red-500">
+            <Nu size={15} className="text-gray-300 hover:text-white" />
+          </button>
+        </div>
+      </div>
+
+      {/* Video area */}
+      <div className="relative w-full bg-black aspect-video flex-shrink-0">
+        <div ref={o}
+          className="shaka-video-container youtube-theme absolute inset-0 w-full h-full"
+          data-shaka-player>
+          <video ref={i}
+            className="w-full h-full bg-black object-contain"
+            playsInline preload="auto" />
+        </div>
+
+        {/* Loading overlay */}
+        {h === "loading" && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/60 pointer-events-none">
+            <div className="relative w-12 h-12">
+              <div className="absolute inset-0 border-4 border-orange-500/20 rounded-full animate-spin" />
+              <div className="absolute inset-1 border-4 border-transparent border-t-orange-500 rounded-full animate-spin"
+                style={{ animationDirection:"reverse", animationDuration:"1.5s" }} />
+            </div>
+            <p className="text-white/80 text-xs animate-pulse">Loading stream…</p>
+          </div>
+        )}
+
+        {/* Error overlay */}
+        {h === "error" && (
+          <div className="absolute inset-0 z-40 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-4 text-center">
+            <div className="w-12 h-12 bg-orange-500/20 rounded-full flex items-center justify-center border-2 border-orange-500/40">
+              <Tu size={20} className="text-orange-400" />
+            </div>
+            <div>
+              <p className="text-orange-300 font-bold text-xs mb-1">Stream Error</p>
+              <p className="text-gray-400 text-xs leading-relaxed max-w-xs">{y}</p>
+            </div>
+            <button onClick={L}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-yellow-500 text-white rounded-full text-xs font-bold transition-all shadow-lg shadow-orange-500/30">
+              <ra size={12} />
+              Retry
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Chat */}
+      <$v channelId={t.id} isEmbedded />
+
+      <p className="text-center py-2 text-xs text-gray-500 flex-shrink-0">
+        Press ESC or click ✕ to close
+      </p>
+    </div>
+  );
 }
 function Dv({liveViewers: t, peakViewers: e, totalViews: n}) {
     const [r,s] = j.useState(0)
