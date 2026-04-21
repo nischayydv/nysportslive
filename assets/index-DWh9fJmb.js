@@ -17269,7 +17269,6 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
       }
 
       O.polyfill.installAll();
-
       if (!O.Player.isBrowserSupported()) {
         T("Browser not supported");
         return;
@@ -17279,112 +17278,87 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
       playerInstance = R;
       a.current = R;
 
-      try {
-        await R.attach(A);
-      } catch (V) {
-        console.error("Attach error:", V);
-      }
+      await R.attach(A);
 
-      // UI Overlay
-      new O.ui.Overlay(R, J, A).configure({
+      // ✅ EXACT UI config from working HTML
+      const ui = new O.ui.Overlay(R, J, A);
+      ui.configure({
+        addBigPlayButton: true,
         controlPanelElements: [
+          "mute",
           "play_pause", 
-          "time_and_duration", 
-          "mute", 
-          "volume", 
-          "spacer", 
-          "picture_in_picture", 
-          "fullscreen", 
-          "overflow_menu"
-        ]
+          "time_and_duration",
+          "spacer",
+          "quality",
+          "picture_in_picture",
+          "fullscreen"
+        ],
+        seekBarColors: {
+          base: "white",
+          buffered: "red", 
+          played: "green"
+        }
       });
 
-      // DRM config
-      if (t.keyId && t.key) {
-        R.configure({
-          drm: {
-            clearKeys: {
-              [t.keyId]: t.key
-            }
+      // ✅ EXACT player config from working HTML
+      R.configure({
+        drm: {
+          clearKeys: {
+            [t.keyId]: t.key
+          }
+        },
+        manifest: {
+          defaultPresentationDelay: 5
+        },
+        streaming: {
+          lowLatencyMode: true,
+          bufferingGoal: 10,
+          rebufferingGoal: 2,
+          safeSeekOffset: 5
+        }
+      });
+
+      // ✅ EXACT cookie/networking from working HTML
+      if (t.cookie) {
+        R.getNetworkingEngine().registerRequestFilter((type, request) => {
+          request.headers["Referer"] = "https://www.jiotv.com/";
+          request.headers["User-Agent"] = "plaYtv/7.1.5 (Linux;Android 13) ExoPlayerLib/2.11.6";
+          request.headers["Cookie"] = t.cookie;
+
+          // ✅ EXACT cookie URL injection logic
+          let urlCookie = t.cookie.startsWith("__hdnea__=") ? t.cookie.substring(10) : t.cookie;
+          
+          if ((type === O.net.NetworkingEngine.RequestType.MANIFEST ||
+               type === O.net.NetworkingEngine.RequestType.SEGMENT) &&
+              !request.uris[0].includes("__hdnea__")) {
+            const sep = request.uris[0].includes("?") ? "&" : "?";
+            request.uris[0] += sep + "__hdnea__=" + urlCookie;
           }
         });
       }
 
-      // ✅ FIXED: Networking headers (removed 'if' wrapper)
-      R.getNetworkingEngine().registerRequestFilter((V, fe) => {
-        fe.headers.Referer = "https://www.jiotv.com/";
-        fe.headers.Origin = "https://www.jiotv.com";
-        fe.headers["User-Agent"] = "Mozilla/5.0 (Linux; Android 13) ExoPlayer/2.18.1";
-        
-        if (t.cookie) {
-          fe.headers.Cookie = t.cookie;
-          if ((V === O.net.NetworkingEngine.RequestType.MANIFEST || 
-               V === O.net.NetworkingEngine.RequestType.SEGMENT) && 
-              !fe.uris[0].includes("__hdnea__=")) {
-            const Ht = fe.uris[0].includes("?") ? "&" : "?";
-            fe.uris[0] += Ht + t.cookie;
-          }
-        }
-      });
-
-      // Rate limiting
-      R.getNetworkingEngine().registerResponseFilter((V, fe) => {
-        if (fe.status === 429) {
-          const Me = parseInt(fe.headers["retry-after"] || "10", 10) * 1000;
-          return new Promise(Ht => setTimeout(Ht, Math.min(Me, 30000)));
-        }
-      });
-
-      // Streaming config
-      R.configure({
-        streaming: {
-          bufferingGoal: 12,
-          rebufferingGoal: 4,
-          bufferBehind: 15,
-          retryParameters: {
-            timeout: 20000,
-            maxAttempts: 3,
-            baseDelay: 4000,
-            backoffFactor: 2,
-            fuzzFactor: 0.3
-          }
-        },
-        manifest: {
-          retryParameters: {
-            timeout: 15000,
-            maxAttempts: 3,
-            baseDelay: 4000,
-            backoffFactor: 2
-          },
-          dash: {
-            ignoreMinBufferTime: true,
-            autoCorrectDrift: true
-          }
-        }
-      });
-
-      // ✅ FIXED: Error handler with mounted check
+      // ✅ Simple error handler
       R.addEventListener("error", V => {
         if (!isMounted || V.detail.severity === 1) return;
+        console.error("Shaka error:", V.detail);
         
         if (l.current < xs) {
           l.current++;
-          const Me = Math.min(l.current * 4000, 20000);
+          const delay = l.current * 4000;
           v("retrying");
-          m(`Retrying… (${l.current}/${xs})`);
+          m(`Loading… (${l.current}/${xs})`);
           p(true);
           u.current = setTimeout(() => {
             if (isMounted && a.current === R) {
               d.current = false;
               $(R);
             }
-          }, Me);
+          }, delay);
         } else {
-          T("Unable to load. Cookies may be expired.");
+          T("Unable to load stream");
         }
       });
 
-      // ✅ ADDED: Loading complete handler
       R.addEventListener("loading.complete", () => {
         if (isMounted) {
           v("ready");
@@ -17392,20 +17366,32 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
         }
       });
 
-      // Load stream
-      if (isMounted) {
-        await $(R);
-      }
+      // ✅ Load + auto-play like HTML
+      await $(R);
+      
+      // Auto-play after load
+      A.addEventListener("loadeddata", () => {
+        if (isMounted) {
+          A.muted = true;
+          A.play().catch(() => {});
+        }
+      }, { once: true });
+
+      A.addEventListener("play", () => {
+        if (isMounted) {
+          A.muted = false;
+          z(); // Trigger view tracking
+        }
+      });
 
     } catch (error) {
-      console.error("Player init error:", error);
-      if (isMounted) T("Failed to initialize player");
+      console.error("Player init failed:", error);
+      if (isMounted) T("Player failed to initialize");
     }
   };
 
   initPlayer();
 
-  // ✅ FIXED: Proper cleanup
   return () => {
     isMounted = false;
     if (u.current) {
@@ -17426,7 +17412,7 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
         });
     }
   };
-}, [t, $, T]),
+}, [t, $, T, z]),
     j.useEffect( () => {
         const A = J => {
             J.key === "Escape" && S && F(),
