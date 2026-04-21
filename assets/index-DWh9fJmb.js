@@ -17141,53 +17141,7 @@ function $v({channelId: t, isEmbedded: e=!0}) {
         })]
     }) : null
 }
-const xs = 3;
-function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalViews: s}) {
-    const i = j.useRef(null)
-      , o = j.useRef(null)
-      , a = j.useRef(null)
-      , l = j.useRef(0)
-      , u = j.useRef(null)
-      , c = j.useRef(!1)
-      , d = j.useRef(!1)
-      , [h,v] = j.useState("loading")
-      , [y,w] = j.useState("")
-      , [k,m] = j.useState("Loading stream…")
-      , [f,p] = j.useState(!0)
-      , [_,E] = j.useState(!1)
-      , [S,b] = j.useState(!1)
-      , T = j.useCallback(A => {
-        w(A),
-        v("error"),
-        p(!0)
-    }
-    , [])
-      , z = j.useCallback( () => {
-        p(!1),
-        v("playing"),
-        c.current || (c.current = !0,
-        n())
-    }
-    , [n])
-      , N = j.useCallback(async () => {
-        const A = i.current;
-        if (!A || h !== "ready") return;
-        try {
-            A.muted = !1,
-            A.volume = .8,
-            await A.play(),
-            z()
-        } catch {
-            try {
-                A.muted = !0,
-                await A.play(),
-                z()
-            } catch {
-                m("Tap again to play")
-            }
-        }
-    }
-    , [h, z])
+// Optimized load function to prevent the start-pause-black flicker
       , $ = j.useCallback(async A => {
         if (d.current || !A) return;
         d.current = !0;
@@ -17197,18 +17151,20 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
             return
         }
         try {
-            await A.load(t.url),
-            l.current = 0,
-            v("ready"),
-            m("Tap to Play");
-            try {
-                J.muted = !0,
-                await J.play(),
-                z()
-            } catch {
-                v("ready"),
-                m("Tap to Play")
-            }
+            // 1. Force mute before loading to bypass browser autoplay blocks
+            J.muted = !0; 
+            
+            // 2. Load the stream
+            await A.load(t.url);
+            l.current = 0;
+            
+            // 3. Single playback trigger
+            await J.play();
+            z();
+            
+            // 4. Safely unmute after playback has confirmed
+            setTimeout(() => { J.muted = !1; }, 500);
+            
             d.current = !1
         } catch (De) {
             d.current = !1;
@@ -17223,79 +17179,37 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
         }
     }
     , [t.url, z, T])
-      , L = j.useCallback( () => {
-        l.current = 0,
-        d.current = !1,
-        v("loading"),
-        m("Reconnecting…"),
-        p(!0),
-        a.current && $(a.current)
-    }
-    , [$])
-      , W = () => {
-        const A = `${window.location.origin}?channel=${t.id}`;
-        navigator.clipboard.writeText(A),
-        E(!0),
-        setTimeout( () => E(!1), 2e3)
-    }
-      , F = async () => {
-        const A = o.current;
-        if (A)
-            try {
-                S ? (document.fullscreenElement && await document.exitFullscreen(),
-                b(!1)) : (A.requestFullscreen && await A.requestFullscreen(),
-                b(!0))
-            } catch (J) {
-                console.error("Fullscreen error:", J)
-            }
-    }
-    ;
-    return j.useEffect( () => {
+
+    // Update the useEffect to stop redundant re-initialization
+    j.useEffect( () => {
         const A = i.current
           , J = o.current;
         if (!A || !J) return;
         let De = !1;
         (async () => {
             const O = window.shaka;
-            if (!O) {
-                T("Player library not loaded");
-                return
-            }
+            if (!O) return T("Player library not loaded");
+            
             shaka.polyfill.installAll();
-            if (!O.Player.isBrowserSupported()) {
-                T("Browser not supported");
-                return
-            }
             const R = new O.Player();
             a.current = R;
-            try {
-                await R.attach(A)
-            } catch (V) {
-                console.error("Attach error:", V)
-            }
+            
+            await R.attach(A);
+            
             new O.ui.Overlay(R,J,A).configure({
                 controlPanelElements: ["play_pause", "time_and_duration", "mute", "volume", "spacer", "quality", "language", "picture_in_picture", "fullscreen", "overflow_menu"]
             });
-            if (t.keyId && t.key) {
-                R.configure({
-                    drm: { clearKeys: { [t.keyId]: t.key } }
-                });
-            }
+
             R.configure({
+                drm: t.keyId && t.key ? { clearKeys: { [t.keyId]: t.key } } : {},
                 streaming: {
-                    bufferingGoal: 15,
-                    rebufferingGoal: 3,
-                    bufferBehind: 20,
-                    segmentPrefetchLimit: 2,
-                    stallEnabled: true,
-                    stallThreshold: 1,
-                    stallSkip: 0.1,
-                    retryParameters: { timeout: 30000, maxAttempts: 3, baseDelay: 2000, backoffFactor: 2, fuzzFactor: 0.5 }
-                },
-                manifest: {
-                    retryParameters: { timeout: 20000, maxAttempts: 3, baseDelay: 2000, backoffFactor: 2 }
+                    bufferingGoal: 10, // Lower goal starts the video faster
+                    rebufferingGoal: 2,
+                    bufferBehind: 10,
+                    retryParameters: { timeout: 30000, maxAttempts: 3 }
                 }
             });
+
             R.getNetworkingEngine().registerRequestFilter( (V, fe) => {
                 fe.headers.Referer = "https://www.jiotv.com/",
                 fe.headers.Origin = "https://www.jiotv.com",
@@ -17308,26 +17222,17 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
                     }
                 }
             });
-            R.addEventListener("error", V => {
-                if (De || V.detail.severity === 1) return;
-                if (l.current < xs) {
-                    l.current++;
-                    v("retrying"),
-                    m(`Reconnecting… (${l.current}/${xs})`),
-                    p(!0),
-                    u.current = setTimeout( () => !De && $(R), l.current * 3000)
-                } else T("Stream unavailable. Please try again later.")
-            });
+
             if (!De) await $(R)
         })();
+
         return () => {
             De = !0,
             u.current && clearTimeout(u.current),
-            a.current && (a.current.detach().then( () => a.current && a.current.destroy() ).catch( () => {} ),
-            a.current = null)
+            a.current && (a.current.destroy(), a.current = null)
         }
     }
-    , [t, $, T]), 
+    , [t.url, t.id, t.key, t.keyId, $])
     j.useEffect( () => {
         const A = J => {
             J.key === "Escape" && S && F(),
