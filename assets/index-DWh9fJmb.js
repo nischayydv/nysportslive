@@ -17142,7 +17142,6 @@ function $v({channelId: t, isEmbedded: e=!0}) {
     }) : null
 }
 const xs = 3;
-
 function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalViews: s}) {
     const i = j.useRef(null)
       , o = j.useRef(null)
@@ -17157,31 +17156,41 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
       , [f,p] = j.useState(!0)
       , [_,E] = j.useState(!1)
       , [S,b] = j.useState(!1)
-
-    const T = j.useCallback(A => {
-        w(A), v("error"), p(!0)
-    }, [])
-
-    const z = j.useCallback(() => {
-        p(!1), v("playing"), c.current || (c.current = !0, n())
-    }, [n])
-
-    const N = j.useCallback(async () => {
+      , T = j.useCallback(A => {
+        w(A),
+        v("error"),
+        p(!0)
+    }
+    , [])
+      , z = j.useCallback( () => {
+        p(!1),
+        v("playing"),
+        c.current || (c.current = !0,
+        n())
+    }
+    , [n])
+      , N = j.useCallback(async () => {
         const A = i.current;
-        if (!A || h !== "ready") return;
-        try {
-            A.muted = !1, A.volume = .8, await A.play(), z()
-        } catch {
+        if (!(!A || h !== "ready"))
             try {
-                A.muted = !0, await A.play(), z()
+                A.muted = !1,
+                A.volume = .8,
+                await A.play(),
+                z()
             } catch {
-                m("Tap again to play")
+                try {
+                    A.muted = !0,
+                    await A.play(),
+                    z()
+                } catch {
+                    m("Tap again to play")
+                }
             }
-        }
-    }, [h, z])
-
-    const $ = j.useCallback(async A => {
-        if (d.current || !A) return;
+    }
+    , [h, z])
+      , $ = j.useCallback(async A => {
+        if (d.current)
+            return;
         d.current = !0;
         const J = i.current;
         if (!J) {
@@ -17189,119 +17198,172 @@ function Lv({channel: t, onClose: e, onViewTrack: n, currentViewCount: r, totalV
             return
         }
         try {
-            // FIX: Force muted state before loading to bypass browser blocks
-            J.muted = !0;
-            await A.load(t.url);
-            l.current = 0, v("ready"), m("Tap to Play");
-            
+            await A.load(t.url),
+            l.current = 0,
+            v("ready"),
+            m("Tap to Play");
             try {
-                // Trigger play while muted (higher success rate)
-                await J.play();
-                z();
-                // Safely unmute after a short delay
-                setTimeout(() => { if(J) J.muted = false; }, 1000);
+                J.muted = !0,
+                await J.play(),
+                z()
             } catch {
-                v("ready"), m("Tap to Play")
+                v("ready"),
+                m("Tap to Play")
             }
             d.current = !1
         } catch (De) {
-            d.current = !1;
-            if (l.current < xs) {
+            if (console.error("Load error:", De),
+            d.current = !1,
+            l.current < xs) {
                 l.current++;
-                const C = l.current * 3000;
-                v("retrying"), m(`Connecting… (${l.current}/${xs})`),
-                u.current = setTimeout(() => $(A), C)
-            } else T("Stream unavailable. Check link or try again.")
+                const C = l.current * 4e3;
+                v("retrying"),
+                m(`Connecting… (${l.current}/${xs})`),
+                u.current = setTimeout( () => $(A), C)
+            } else
+                T("Stream unavailable. Check link or try again.")
         }
-    }, [t.url, z, T])
-
-    const L = j.useCallback(() => {
-        l.current = 0, d.current = !1, v("loading"), m("Reconnecting…"), p(!0),
-        a.current && $(a.current)
-    }, [$])
-
-    const W = () => {
-        const A = `${window.location.origin}?channel=${t.id}`;
-        navigator.clipboard.writeText(A), E(!0), setTimeout(() => E(!1), 2e3)
     }
-
-    const F = async () => {
+    , [t.url, z, T])
+      , L = j.useCallback( () => {
+        l.current = 0,
+        d.current = !1,
+        v("loading"),
+        m("Reconnecting…"),
+        p(!0),
+        a.current && $(a.current)
+    }
+    , [$])
+      , W = () => {
+        const A = `${window.location.origin}?channel=${t.id}`;
+        navigator.clipboard.writeText(A),
+        E(!0),
+        setTimeout( () => E(!1), 2e3)
+    }
+      , F = async () => {
         const A = o.current;
-        if (A) try {
-            S ? (document.fullscreenElement && await document.exitFullscreen(), b(!1)) : 
-            (A.requestFullscreen && await A.requestFullscreen(), b(!0))
-        } catch (J) { console.error("Fullscreen error:", J) }
-    };
-
-    j.useEffect(() => {
-        const A = i.current, J = o.current;
-        if (!A || !J) return;
-        let De = !1;
-        (async () => {
-            const O = window.shaka;
-            if (!O) { T("Player library not loaded"); return }
-            
-            shaka.polyfill.installAll();
-            if (!O.Player.isBrowserSupported()) { T("Browser not supported"); return }
-            
-            const R = new O.Player();
-            a.current = R;
-            try { await R.attach(A) } catch (V) { console.error("Attach error:", V) }
-            
-            new O.ui.Overlay(R, J, A).configure({
-                controlPanelElements: ["play_pause", "time_and_duration", "mute", "volume", "spacer", "quality", "language", "picture_in_picture", "fullscreen", "overflow_menu"]
-            });
-
-            if (t.keyId && t.key) {
-                R.configure({ drm: { clearKeys: { [t.keyId]: t.key } } });
+        if (A)
+            try {
+                S ? (document.fullscreenElement && await document.exitFullscreen(),
+                b(!1)) : (A.requestFullscreen && await A.requestFullscreen(),
+                b(!0))
+            } catch (J) {
+                console.error("Fullscreen error:", J)
             }
-
-            R.configure({
-                streaming: {
-                    bufferingGoal: 8, // Lower goal fixes the long black screen
-                    rebufferingGoal: 2,
-                    bufferBehind: 10,
-                    segmentPrefetchLimit: 2,
-                    stallEnabled: true,
-                    stallThreshold: 1,
-                    stallSkip: 0.1,
-                    retryParameters: { timeout: 30000, maxAttempts: 3, baseDelay: 2000, backoffFactor: 2, fuzzFactor: 0.5 }
-                },
-                manifest: { retryParameters: { timeout: 20000, maxAttempts: 3, baseDelay: 2000, backoffFactor: 2 } }
-            });
-
-            R.getNetworkingEngine().registerRequestFilter((V, fe) => {
-                fe.headers.Referer = "https://www.jiotv.com/",
-                fe.headers.Origin = "https://www.jiotv.com",
-                fe.headers["User-Agent"] = "Mozilla/5.0 (Linux; Android 13) ExoPlayer/2.18.1";
-                if (t.cookie) {
-                    fe.headers.Cookie = t.cookie;
-                    if ((V === O.net.NetworkingEngine.RequestType.MANIFEST || V === O.net.NetworkingEngine.RequestType.SEGMENT) && !fe.uris[0].includes("__hdnea__=")) {
-                        const Ht = fe.uris[0].includes("?") ? "&" : "?";
-                        fe.uris[0] += Ht + t.cookie
+    }
+    ;
+    return j.useEffect( () => {
+        const A = i.current
+          , J = o.current;
+        if (!A || !J)
+            return;
+        let De = !1;
+        return (async () => {
+            const O = window.shaka;
+            if (!O) {
+                T("Player library not loaded");
+                return
+            }
+            if (O.polyfill.installAll(),
+            !O.Player.isBrowserSupported()) {
+                T("Browser not supported");
+                return
+            }
+            const R = new O.Player;
+            a.current = R;
+            try {
+                await R.attach(A)
+            } catch (V) {
+                console.error("Attach error:", V)
+            }
+            new O.ui.Overlay(R,J,A).configure({
+                controlPanelElements: ["play_pause", "time_and_duration", "mute", "volume", "spacer", "quality", "language", "picture_in_picture", "fullscreen", "overflow_menu"]
+            }),
+            t.keyId && t.key && R.configure({
+                drm: {
+                    clearKeys: {
+                        [t.keyId]: t.key
                     }
                 }
-            });
-
+            }),
+            R.getNetworkingEngine().registerRequestFilter( (V, fe) => {
+                if (fe.headers.Referer = "https://www.jiotv.com/",
+                fe.headers.Origin = "https://www.jiotv.com",
+                fe.headers["User-Agent"] = "Mozilla/5.0 (Linux; Android 13) ExoPlayer/2.18.1",
+                t.cookie && (fe.headers.Cookie = t.cookie,
+                (V === O.net.NetworkingEngine.RequestType.MANIFEST || V === O.net.NetworkingEngine.RequestType.SEGMENT) && !fe.uris[0].includes("__hdnea__="))) {
+                    const Ht = fe.uris[0].includes("?") ? "&" : "?";
+                    fe.uris[0] += Ht + t.cookie
+                }
+            }
+            ),
+            R.getNetworkingEngine().registerResponseFilter( (V, fe) => {
+                if (fe.status === 429) {
+                    const Me = parseInt(fe.headers["retry-after"] || "10", 10) * 1e3;
+                    return new Promise(Ht => setTimeout(Ht, Math.min(Me, 3e4)))
+                }
+            }
+            ),
+            R.configure({
+                streaming: {
+                    bufferingGoal: 12,
+                    rebufferingGoal: 4,
+                    bufferBehind: 15,
+                    segmentPrefetchLimit: 2,
+                    retryParameters: {
+                        timeout: 2e4,
+                        maxAttempts: 2,
+                        baseDelay: 4e3,
+                        backoffFactor: 2,
+                        fuzzFactor: .3
+                    }
+                },
+                manifest: {
+                    retryParameters: {
+                        timeout: 15e3,
+                        maxAttempts: 2,
+                        baseDelay: 4e3,
+                        backoffFactor: 2
+                    },
+                    dash: {
+                        ignoreMinBufferTime: !0,
+                        autoCorrectDrift: !0
+                    }
+                }
+            }),
             R.addEventListener("error", V => {
-                if (De || V.detail.severity === 1) return;
-                if (l.current < xs) {
-                    l.current++;
-                    v("retrying"), m(`Reconnecting… (${l.current}/${xs})`), p(!0),
-                    u.current = setTimeout(() => !De && $(R), l.current * 3000)
-                } else T("Stream unavailable. Please try again later.")
-            });
-
-            if (!De) await $(R)
-        })();
-
-        return () => {
-            De = !0, u.current && clearTimeout(u.current),
-            a.current && (a.current.detach().then(() => a.current && a.current.destroy()).catch(() => {}), a.current = null)
+                if (!(De || V.detail.severity === 1))
+                    if (l.current < xs) {
+                        l.current++;
+                        const Me = Math.min(l.current * 4e3, 2e4);
+                        v("retrying"),
+                        m(`Retrying… (${l.current}/${xs})`),
+                        p(!0),
+                        u.current = setTimeout( () => {
+                            d.current = !1,
+                            $(R)
+                        }
+                        , Me)
+                    } else
+                        T("Unable to load. Cookies may be expired.")
+            }
+            ),
+            De || await $(R)
+        }
+        )(),
+        () => {
+            De = !0,
+            u.current && clearTimeout(u.current),
+            a.current && (a.current.detach().then( () => {
+                var O;
+                return (O = a.current) == null ? void 0 : O.destroy()
+            }
+            ).catch( () => {}
+            ),
+            a.current = null)
         }
     }
-    , [t, $, T]), /* UI return stays here */
-
+    , [t, $, T]),
     j.useEffect( () => {
         const A = J => {
             J.key === "Escape" && S && F(),
