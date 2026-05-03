@@ -9853,7 +9853,7 @@ function Hd({channel: e, onClose: t}) {
         })]
     })
 }
-const Wd = "https://binge-jiotv.pages.dev/data/id.json";
+const Wd = "https://raw.githubusercontent.com/nischayydv/jiojson1/main/stream.json";
 function Qd() {
     const [e,t] = I.useState([])
       , [n,r] = I.useState(!0)
